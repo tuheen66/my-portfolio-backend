@@ -4,7 +4,7 @@ const cors = require("cors");
 const bcrypt = require("bcrypt");
 const { MongoClient, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
-const cookieParser = require("cookie-parser");
+// const cookieParser = require("cookie-parser");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -12,22 +12,27 @@ const port = process.env.PORT || 5000;
 // Middleware
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3001"],
+    origin: [
+      "http://localhost:3000",
+      "https://portfolio-dashboard-sepia.vercel.app",
+      "https://portfolio-frontend-one-lilac.vercel.app",
+      "http://localhost:3001",
+    ],
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 app.use(express.json());
-app.use(cookieParser());
+// app.use(cookieParser());
 
 // MongoDB Connection URL
 const uri = process.env.MONGODB_URI;
+
 const client = new MongoClient(uri, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 });
-
-
-
 
 async function run() {
   try {
@@ -45,26 +50,26 @@ async function run() {
       .db("my-portfolio")
       .collection("experiences");
 
-      async function addUser(email, password, role = "admin") {
-        try {
-          const userCollection = client.db("my-portfolio").collection("user");
-      
-          // Hash the password
-          const hashedPassword = await bcrypt.hash(password, 10);
-      
-          // Insert the user into the database
-          const result = await userCollection.insertOne({
-            email,
-            password: hashedPassword,
-            role,
-          });
-      
-          console.log("User added successfully:", result.insertedId);
-        } catch (error) {
-          console.error("Error adding user:", error);
-        }
+    async function addUser(email, password, role = "admin") {
+      try {
+        const userCollection = client.db("my-portfolio").collection("user");
+
+        // Hash the password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Insert the user into the database
+        const result = await userCollection.insertOne({
+          email,
+          password: hashedPassword,
+          role,
+        });
+
+        console.log("User added successfully:", result.insertedId);
+      } catch (error) {
+        console.error("Error adding user:", error);
       }
-      addUser("hassan.monirul@gmail.com", "admin123");
+    }
+    // addUser("hassan.monirul@gmail.com", "admin123");
 
     // skills section
     app.get("/skills", async (req, res) => {
@@ -176,7 +181,7 @@ async function run() {
 
     app.patch("/blogs/:id", async (req, res) => {
       const id = req.params.id;
-      const { blog, title, author, image, category } = req.body;
+      const { blogContent, title, author, image, category } = req.body;
       const filter = { _id: new ObjectId(id) };
       const updateDoc = {
         $set: {
@@ -273,59 +278,76 @@ async function run() {
       });
     });
 
-    // User Login
+    //! login
+
     app.post("/login", async (req, res) => {
       try {
         const { email, password } = req.body;
-    
+
         // Validate input
         if (!email || !password) {
-          return res.status(400).json({ message: "Email and password are required" });
+          return res
+            .status(400)
+            .json({ message: "Email and password are required" });
         }
-    
+
         // Find user by email
         const user = await userCollection.findOne({ email });
         if (!user) {
           return res.status(401).json({ message: "Invalid email or password" });
         }
-    
-        // Compare the provided password with the hashed password in the database
+
+        // Compare password
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
           return res.status(401).json({ message: "Invalid email or password" });
         }
-    
+
         // Ensure JWT_SECRET and EXPIRES_IN are defined
         if (!process.env.JWT_SECRET || !process.env.EXPIRES_IN) {
-          return res.status(500).json({ message: "Server configuration error" });
+          return res
+            .status(500)
+            .json({ message: "Server configuration error" });
         }
-    
+
         // Generate JWT token
         const token = jwt.sign(
           { email: user.email, role: user.role },
           process.env.JWT_SECRET,
           { expiresIn: process.env.EXPIRES_IN }
         );
-    
-        // Set cookie and respond
-        res
-          .cookie("token", token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production", // Use secure cookies in production
-            sameSite: "strict",
-          })
-          .json({
-            success: true,
-            message: "User successfully logged in!",
-            accessToken: token,
-          });
+
+        // Set cookie with additional options
+        res.cookie("token", token, {
+          httpOnly: true,
+          secure: false,
+          sameSite: "lax",
+
+          maxAge: 1000 * 60 * 60 * 24 * 7,
+        });
+
+        return res.json({
+          success: true,
+          message: "User successfully logged in!",
+          token: token,
+        });
       } catch (error) {
         console.error("Error during login:", error);
-        res.status(500).json({ message: "Internal server error" });
+        return res.status(500).json({ message: "Internal server error" });
       }
     });
 
-    // Start the server
+    app.post("/logout", (req, res) => {
+      res.cookie("token", "", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "None",
+      });
+      res
+        .status(200)
+        .json({ success: true, message: "Logged out successfully" });
+    });
+
     app.listen(port, () => {
       console.log(`Server is running on http://localhost:${port}`);
     });
